@@ -142,27 +142,34 @@ std::pair<int, std::string> ReceiveFrom(const int sockfd,
 
 namespace ctello
 {
-Tello::Tello()
+Tello::Tello(const std::string& telloName, char* const telloIP)
 {
+    this->telloName = telloName;
+    this->telloIP = telloIP;
     createSockets();
     spdlog::set_pattern(LOG_PATTERN);
     auto log_level = ::GetLogLevelFromEnv("SPDLOG_LEVEL");
     spdlog::set_level(log_level);
     lastTimeOfRCCommand = std::chrono::high_resolution_clock::now();
 }
-Tello::Tello(bool withThreads)
+Tello::Tello(bool withThreads, const std::string& telloName, char* const telloIP, const int local_client_command_port, int local_server_command_port)
 {
+    multithreading = withThreads;
+    this->telloName = telloName;
+    this->telloIP = telloIP;
     createSockets();
     spdlog::set_pattern(LOG_PATTERN);
     auto log_level = ::GetLogLevelFromEnv("SPDLOG_LEVEL");
     spdlog::set_level(log_level);
     lastTimeOfRCCommand = std::chrono::high_resolution_clock::now();
     responses = std::vector<std::string>{};
-    BindWithOutStatus();
-    responseReceiver = std::thread(&Tello::listenToResponses, this);
-    stateReceiver = std::thread(&Tello::listenToState, this);
+    BindWithOutStatus(local_client_command_port, local_server_command_port);
+    if(withThreads){
+        responseReceiver = std::thread(&Tello::listenToResponses, this);
+        stateReceiver = std::thread(&Tello::listenToState, this);
+    }
     spdlog::info("Finding Tello ...");
-    SendCommandWithResponse("command");
+    FindTello();
 }
 void Tello::listenToState()
 {
@@ -216,6 +223,7 @@ void Tello::listenToResponses()
 }
 Tello::~Tello()
 {
+    SendCommand("finish");
     closeSockets();
     /*if (!logFileName.empty()){
         auto now = std::chrono::system_clock::to_time_t(
@@ -229,15 +237,24 @@ void Tello::closeSockets()
 {
     close(m_command_sockfd);
     close(m_state_sockfd);
+
     m_command_sockfd = 0;
     m_state_sockfd = 0;
-    responseReceiver.join();
-    stateReceiver.join();
+    if(multithreading){
+        responseReceiver.join();
+        stateReceiver.join();
+    }
 }
 void Tello::createSockets()
 {
     m_command_sockfd = socket(AF_INET, SOCK_DGRAM, 0);
+    if(setsockopt(m_command_sockfd, SOL_SOCKET, SO_BINDTODEVICE, "wlp3s0", sizeof(int)) < 0){
+        //spdlog::error("reuse command socket failed");
+    }
     m_state_sockfd = socket(AF_INET, SOCK_DGRAM, 0);
+    if(setsockopt(m_state_sockfd, SOL_SOCKET, SO_BINDTODEVICE, "wlp3s0", sizeof(int)) < 0){
+        //spdlog::error("reuse state socket failed");
+    }
 }
 void Tello::RcCommand(const std::string& rcCommand)
 {
@@ -266,7 +283,7 @@ bool Tello::BindWithOutStatus(const int local_client_command_port,
         return false;
     }
     m_local_client_command_port = local_client_command_port;
-    result = ::FindSocketAddr(TELLO_SERVER_IP, TELLO_SERVER_COMMAND_PORT,
+    result = ::FindSocketAddr(this->telloIP, TELLO_SERVER_COMMAND_PORT,
                               &m_tello_server_command_addr);
     if (!result.first)
     {
@@ -282,6 +299,7 @@ bool Tello::BindWithOutStatus(const int local_client_command_port,
         return false;
     }
 
+
     return true;
 }
 bool Tello::Bind(const int local_client_command_port,
@@ -296,7 +314,7 @@ bool Tello::Bind(const int local_client_command_port,
         return false;
     }
     m_local_client_command_port = local_client_command_port;
-    result = ::FindSocketAddr(TELLO_SERVER_IP, TELLO_SERVER_COMMAND_PORT,
+    result = ::FindSocketAddr(this->telloIP, TELLO_SERVER_COMMAND_PORT,
                               &m_tello_server_command_addr);
     if (!result.first)
     {
@@ -325,6 +343,7 @@ void Tello::FindTello()
 {
     do
     {
+        //std::cout << "sent: command" << std::endl;
         SendCommand("command");
         sleep(1);
     } while (!(ReceiveResponse()));
@@ -438,6 +457,7 @@ void Tello::ShowTelloInfo()
 }
 bool Tello::SendCommand(const std::string& command)
 {
+    std::cout << "sending " << command << " to " << this->telloName << std::endl;
     const std::vector<unsigned char> message{command.begin(), command.end()};
     const auto result =
         ::SendTo(m_command_sockfd, m_tello_server_command_addr, message);
@@ -448,7 +468,7 @@ bool Tello::SendCommand(const std::string& command)
         return false;
     }
     spdlog::debug("127.0.0.1:{} >>>> {} bytes >>>> {}:{}: {}",
-                  m_local_client_command_port, bytes, TELLO_SERVER_IP,
+                  m_local_client_command_port, bytes, telloIP,
                   TELLO_SERVER_COMMAND_PORT, command);
     return true;
 }
@@ -482,7 +502,7 @@ bool Tello::SendCommandWithResponse(const std::string& command,
     spdlog::info(strAnswer + ": " +
                  std::string(message.begin(), message.end()));
     spdlog::debug("127.0.0.1:{} >>>> {} bytes >>>> {}:{}: {}",
-                  m_local_client_command_port, bytes, TELLO_SERVER_IP,
+                  m_local_client_command_port, bytes, telloIP,
                   TELLO_SERVER_COMMAND_PORT, command);
     bool isSuccess = strAnswer.find("ok") != std::string::npos ||
                      strAnswer.find("OK") != std::string::npos;

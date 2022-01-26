@@ -18,3 +18,12 @@ target_link_libraries(ctello PRIVATE spdlog::spdlog)
 
 install(TARGETS ctello DESTINATION lib)
 install(FILES include/ctello.h DESTINATION include)
+
+## Flip -----------------------------------------------------------------------
+add_executable(flip examples/flip.cpp)
+
+target_include_directories(flip PRIVATE include)
+
+target_link_libraries(flip ctello)
+target_link_libraries(flip ${OpenCV_LIBS})
+

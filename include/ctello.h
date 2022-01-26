@@ -60,8 +60,8 @@ namespace ctello
 class Tello
 {
 public:
-    Tello();
-    explicit Tello(bool withThreads);
+    Tello(const std::string& telloName = "", char* const telloIP= const_cast<char*>(TELLO_SERVER_IP));
+    explicit Tello(bool withThreads, const std::string& telloName = "", char* const telloIP= const_cast<char*>(TELLO_SERVER_IP),  int local_client_command_port = LOCAL_CLIENT_COMMAND_PORT, int local_server_command_port = LOCAL_SERVER_STATE_PORT);
     ~Tello();
     bool Bind(int local_client_command_port = LOCAL_CLIENT_COMMAND_PORT,
               int local_server_command_port = LOCAL_SERVER_STATE_PORT);
@@ -94,6 +94,8 @@ public:
 private:
     void FindTello();
     void ShowTelloInfo();
+    std::string telloName;
+    char* telloIP;
     /*std::string logFileName= "";
     std::ofstream telloLogFile;*/
     int m_command_sockfd{0};
@@ -102,6 +104,7 @@ private:
     sockaddr_storage m_tello_server_command_addr{};
     int height;
     int battery;
+    bool multithreading = false;
     std::thread responseReceiver;
     std::thread stateReceiver;
     int timeBetweenRcCommandInMicroSeconds = 1000000;
